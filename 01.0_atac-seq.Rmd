@@ -1,0 +1,193 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Setup 
+
+
+```{r} 
+
+"%&%" <- function(a,b) paste0(a,b)
+library("tidyverse"); library("data.table")
+library("DESeq2")
+
+serv.dir <- "/home/jason/science/servers/FUSE5/"
+work.dir <- serv.dir %&% "projects/adipocytes/"
+atac.file <- work.dir %&% "atac_seq/atac_counts.txt"
+
+```
+
+# ATAC-seq analysis 
+
+```{r}
+
+atac.file <- work.dir %&% "atac_seq/atac_counts.txt"
+
+```
+
+
+
+## Count Matrix 
+
+```{r}
+
+atac.df <- fread(atac.file)
+names(atac.df)[7:14] <- c("OBB6974_Abdo_D0","OBB6974_Glut_mADs","OBB5710_Glut_mADs",
+                        "OBB5710_Abdo_D0","OBB5710_Abdo_mADs","OBB6974_Abdo_mADs",
+                        "OBB5710_Glut_D0","OBB6974_Glut_D0")
+countdata <- atac.df[,7:13] %>% as.matrix(.) # Ommitting OBB6974_Glut_D0
+row.names(countdata) <- atac.df$Geneid
+colnames(countdata) <- NULL
+
+
+```
+
+## Sample data 
+
+```{r}
+
+name.vec <- names(atac.df)[7:13]
+pheno.df <- c()
+for (s in name.vec){
+  vec <- strsplit(x=s,split="_")[[1]]
+  build.df <- data.frame("donor"=vec[1],"body.region"=vec[2],"cell.type"=vec[3],
+                         stringsAsFactors = T)
+  pheno.df <- rbind(pheno.df,build.df)
+}
+row.names(pheno.df) <- name.vec
+
+```
+
+
+## Run DESeq2 
+
+```{r}
+
+ddsFullCountTable <- DESeqDataSetFromMatrix(
+  countData = countdata,
+  colData = pheno.df,
+  design = ~ body.region + cell.type)
+
+ddsFullCountTable$body.region <- relevel(ddsFullCountTable$body.region,"Glut")
+ddsFullCountTable$cell.type <- relevel(ddsFullCountTable$cell.type,"mADs")
+dds <- DESeq(ddsFullCountTable)
+
+```
+
+
+## Results 
+
+```{r}
+
+res1 <- results(dds, contrast = c("cell.type","D0","mADs"))
+sum(res1$padj < 0.01, na.rm=TRUE) # 158185
+res2 <- results(dds, contrast = c("body.region","Abdo","Glut"))
+sum(res2$padj < 0.01, na.rm=TRUE) # 0 
+
+```
+
+```{r}
+
+df1 <- as.data.frame(res1)
+df1$feature <- rownames(countdata)
+write.table(x=df1,file=work.dir%&%"atac_seq/deseq_cell-type.txt",
+            sep="\t",quote=F,row.names=F)
+
+df2 <- as.data.frame(res2)
+df2$feature <- rownames(countdata)
+write.table(x=df2,file=work.dir%&%"atac_seq/deseq_body-region.txt",
+            sep="\t",quote=F,row.names=F)
+
+```
+
+
+Subset bed file 
+
+```{r}
+
+bed.df <- fread(work.dir%&%"atac_seq/merged_file.bed")
+bed.df$feature <- rownames(countdata) 
+sigpeaks <- filter(df1,padj<=0.01)$feature
+bed.sub <- filter(bed.df,feature %in% sigpeaks)
+write.table(x=bed.sub[,c(1:3)],file=work.dir%&%
+              "atac_seq/merged_file_sigpeaks_fdr01_celltype.bed",
+            sep="\t",quote=F,row.names=F,col.names = F)
+
+
+```
+
+
+
+## MA-Plots and P-value histograms 
+
+Cell type 
+
+```{r}
+
+plotMA(res1)
+
+hist( res1$pvalue, breaks=20, col="grey")
+
+```
+
+
+Body Region 
+
+```{r}
+
+plotMA(res2)
+hist( res2$pvalue, breaks=20, col="grey")
+```
+
+##  Dispersion plots 
+
+
+```{r}
+
+plotDispEsts(dds)
+
+```
+
+## Rlog transformation (EDA) 
+
+
+```{r}
+
+rld <- rlog( dds) 
+head( assay(rld) )
+
+par( mfrow = c( 1, 2 ) )
+plot( log2( 1+counts(dds, normalized=TRUE)[, 1:2] ), col="#00000020", pch=20, cex=0.3 )
+plot( assay(rld)[, 1:2], col="#00000020", pch=20, cex=0.3 )
+
+```
+
+
+## Sample distances 
+
+```{r}
+
+sampleDists <- dist( t( assay(rld) ) )
+sampleDists
+
+sampleDistMatrix <- as.matrix( sampleDists )
+rownames(sampleDistMatrix) <- paste( rld$body.region,
+rld$cell.type, sep="-" )
+colnames(sampleDistMatrix) <- NULL
+library( "gplots" )
+library( "RColorBrewer" )
+colours = colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+#heatmap.2( sampleDistMatrix, trace="none", col=colours)
+
+plotPCA( rld, intgroup = c("cell.type","donor","body.region"))
+
+
+```
+
+
+

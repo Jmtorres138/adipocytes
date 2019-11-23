@@ -1,0 +1,180 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Setup 
+
+
+```{r} 
+
+"%&%" <- function(a,b) paste0(a,b)
+library("tidyverse"); library("data.table")
+library("DESeq2")
+
+serv.dir <- "/home/jason/science/servers/FUSE5/"
+work.dir <- serv.dir %&% "projects/adipocytes/"
+
+```
+
+# ATAC-seq analysis 
+
+```{r}
+
+rna.file <- work.dir %&% "rna_seq/rna_seq.gene.counts.tsv"
+
+```
+
+
+
+## Count Matrix 
+
+```{r}
+
+rna.df <- fread(rna.file)
+ensid.vec <- rna.df$GeneID
+gene.vec <- rna.df$GeneName
+
+countdata <- rna.df[,3:10] %>% as.matrix(.) 
+row.names(countdata) <- ensid.vec #gene.vec
+colnames(countdata) <- NULL
+
+
+```
+
+## Sample data 
+
+```{r}
+
+name.vec <- names(rna.df)[3:10]
+pheno.df <- c()
+for (s in name.vec){
+  vec <- strsplit(x=s,split="_")[[1]]
+  build.df <- data.frame("donor"=vec[1],"body.region"=vec[2],"cell.type"=vec[3],
+                         stringsAsFactors = T)
+  pheno.df <- rbind(pheno.df,build.df)
+}
+row.names(pheno.df) <- name.vec
+
+```
+
+
+## Run DESeq2 
+
+```{r}
+
+ddsFullCountTable <- DESeqDataSetFromMatrix(
+  countData = countdata,
+  colData = pheno.df,
+  design = ~ body.region + cell.type)
+
+ddsFullCountTable$body.region <- relevel(ddsFullCountTable$body.region,"Glut")
+ddsFullCountTable$cell.type <- relevel(ddsFullCountTable$cell.type,"mADs")
+dds <- DESeq(ddsFullCountTable)
+
+```
+
+
+## Results 
+
+```{r}
+
+res1 <- results(dds, contrast = c("cell.type","D0","mADs"))
+sum(res1$padj < 0.01, na.rm=TRUE) # 8636
+res2 <- results(dds, contrast = c("body.region","Abdo","Glut"))
+sum(res2$padj < 0.01, na.rm=TRUE) # 29 
+
+```
+
+```{r}
+
+df1 <- as.data.frame(res1)
+df1$ensid <- rownames(countdata)
+df1$gene.name <- gene.vec
+write.table(x=df1,file=work.dir%&%"rna_seq/deseq_cell-type.txt",
+            sep="\t",quote=F,row.names=F)
+
+df2 <- as.data.frame(res2)
+df2$ensid <- rownames(countdata)
+df2$gene.name <- gene.vec
+write.table(x=df2,file=work.dir%&%"rna_seq/deseq_body-region.txt",
+            sep="\t",quote=F,row.names=F)
+
+```
+
+
+
+
+
+## MA-Plots and P-value histograms 
+
+Cell type 
+
+```{r}
+
+plotMA(res1)
+
+hist( res1$pvalue, breaks=20, col="grey")
+
+```
+
+
+Body Region 
+
+```{r}
+
+plotMA(res2)
+hist( res2$pvalue, breaks=20, col="grey")
+```
+
+##  Dispersion plots 
+
+
+```{r}
+
+plotDispEsts(dds)
+
+```
+
+## Rlog transformation (EDA) 
+
+
+```{r}
+
+rld <- rlog( dds) 
+head( assay(rld) )
+
+par( mfrow = c( 1, 2 ) )
+plot( log2( 1+counts(dds, normalized=TRUE)[, 1:2] ), col="#00000020", pch=20, cex=0.3 )
+plot( assay(rld)[, 1:2], col="#00000020", pch=20, cex=0.3 )
+
+```
+
+
+## Sample distances 
+
+```{r}
+
+sampleDists <- dist( t( assay(rld) ) )
+sampleDists
+
+sampleDistMatrix <- as.matrix( sampleDists )
+rownames(sampleDistMatrix) <- paste( rld$body.region,
+rld$cell.type, sep="-" )
+colnames(sampleDistMatrix) <- NULL
+library( "gplots" )
+library( "RColorBrewer" )
+colours = colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+#heatmap.2( sampleDistMatrix, trace="none", col=colours)
+
+plotPCA( rld, intgroup = c("cell.type","donor","body.region"))
+
+
+```
+
+
+
