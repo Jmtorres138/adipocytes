@@ -60,6 +60,7 @@ for (s in name.vec){
   pheno.df <- rbind(pheno.df,build.df)
 }
 row.names(pheno.df) <- name.vec
+pheno.df$group <- (pheno.df$body.region %&% "."%&% pheno.df$cell.type) %>% as.factor(.)
 
 ```
 
@@ -71,10 +72,11 @@ row.names(pheno.df) <- name.vec
 ddsFullCountTable <- DESeqDataSetFromMatrix(
   countData = countdata,
   colData = pheno.df,
-  design = ~ body.region + cell.type)
+  design = ~ donor + group )
+#  design = ~ body.region + cell.type)
 
-ddsFullCountTable$body.region <- relevel(ddsFullCountTable$body.region,"Glut")
-ddsFullCountTable$cell.type <- relevel(ddsFullCountTable$cell.type,"mADs")
+#ddsFullCountTable$body.region <- relevel(ddsFullCountTable$body.region,"Glut")
+#ddsFullCountTable$cell.type <- relevel(ddsFullCountTable$cell.type,"mADs")
 dds <- DESeq(ddsFullCountTable)
 
 ```
@@ -84,23 +86,57 @@ dds <- DESeq(ddsFullCountTable)
 
 ```{r}
 
-res1 <- results(dds, contrast = c("cell.type","D0","mADs"))
-sum(res1$padj < 0.01, na.rm=TRUE) # 158185
-res2 <- results(dds, contrast = c("body.region","Abdo","Glut"))
-sum(res2$padj < 0.01, na.rm=TRUE) # 0 
+#res1 <- results(dds, contrast = c("cell.type","D0","mADs"))
+#sum(res1$padj < 0.01, na.rm=TRUE) # 158185
+
+#res2 <- results(dds, contrast = c("body.region","Abdo","Glut"))
+#sum(res2$padj < 0.01, na.rm=TRUE) # 0 
+
+res3 <- results(dds, contrast = c("group","Abdo.D0","Abdo.mADs"))
+sum(res3$padj < 0.01, na.rm=TRUE) # 62465
+
+res4 <- results(dds, contrast = c("group","Glut.D0","Glut.mADs"))
+sum(res4$padj < 0.01, na.rm=TRUE) # 37649; could be the same peaks 
+
+
+res5 <- results(dds, contrast = c("group","Abdo.D0","Glut.D0"))
+sum(res5$padj < 0.01, na.rm=TRUE) # 0
+
+res6 <- results(dds, contrast = c("group","Abdo.mADs","Glut.mADs"))
+sum(res6$padj < 0.01, na.rm=TRUE) # 0
 
 ```
 
 ```{r}
 
-df1 <- as.data.frame(res1)
-df1$feature <- rownames(countdata)
-write.table(x=df1,file=work.dir%&%"atac_seq/deseq_cell-type.txt",
+#df1 <- as.data.frame(res1)
+#df1$feature <- rownames(countdata)
+#write.table(x=df1,file=work.dir%&%"atac_seq/deseq_cell-type.txt",
+#            sep="\t",quote=F,row.names=F)
+#
+#df2 <- as.data.frame(res2)
+#df2$feature <- rownames(countdata)
+#write.table(x=df2,file=work.dir%&%"atac_seq/deseq_body-region.txt",
+#            sep="\t",quote=F,row.names=F)
+
+df3 <- as.data.frame(res3)
+df3$feature <- rownames(countdata)
+write.table(x=df3,file=work.dir%&%"atac_seq/Abdo-D0_vs_mADs.txt",
             sep="\t",quote=F,row.names=F)
 
-df2 <- as.data.frame(res2)
-df2$feature <- rownames(countdata)
-write.table(x=df2,file=work.dir%&%"atac_seq/deseq_body-region.txt",
+df4 <- as.data.frame(res4)
+df4$feature <- rownames(countdata)
+write.table(x=df4,file=work.dir%&%"atac_seq/Glut-D0_vs_mADs.txt",
+            sep="\t",quote=F,row.names=F)
+
+df5 <- as.data.frame(res5)
+df5$feature <- rownames(countdata)
+write.table(x=df5,file=work.dir%&%"atac_seq/D0-Abdo_vs_Glut.txt",
+            sep="\t",quote=F,row.names=F)
+
+df6 <- as.data.frame(res6)
+df6$feature <- rownames(countdata)
+write.table(x=df6,file=work.dir%&%"atac_seq/mADs-Abdo_vs_Glut.txt",
             sep="\t",quote=F,row.names=F)
 
 ```
@@ -112,10 +148,10 @@ Subset bed file
 
 bed.df <- fread(work.dir%&%"atac_seq/merged_file.bed")
 bed.df$feature <- rownames(countdata) 
-sigpeaks <- filter(df1,padj<=0.01)$feature
+sigpeaks <- filter(df3,padj<=0.01)$feature
 bed.sub <- filter(bed.df,feature %in% sigpeaks)
 write.table(x=bed.sub[,c(1:3)],file=work.dir%&%
-              "atac_seq/merged_file_sigpeaks_fdr01_celltype.bed",
+              "atac_seq/merged_file_sigpeaks_fdr01_celltype_Abdo.bed",
             sep="\t",quote=F,row.names=F,col.names = F)
 
 
@@ -129,19 +165,23 @@ Cell type
 
 ```{r}
 
-plotMA(res1)
+#plotMA(res1)
+#hist( res1$pvalue, breaks=20, col="grey")
+#plotMA(res2)
+#hist( res2$pvalue, breaks=20, col="grey")
 
-hist( res1$pvalue, breaks=20, col="grey")
+plotMA(res3)
+hist( res3$pvalue, breaks=20, col="grey")
 
-```
+plotMA(res4)
+hist( res4$pvalue, breaks=20, col="grey")
 
+plotMA(res5)
+hist( res5$pvalue, breaks=20, col="grey")
 
-Body Region 
+plotMA(res6)
+hist( res6$pvalue, breaks=20, col="grey")
 
-```{r}
-
-plotMA(res2)
-hist( res2$pvalue, breaks=20, col="grey")
 ```
 
 ##  Dispersion plots 

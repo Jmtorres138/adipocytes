@@ -21,7 +21,7 @@ work.dir <- serv.dir %&% "projects/adipocytes/"
 
 ```
 
-# ATAC-seq analysis 
+# RNA-seq analysis 
 
 ```{r}
 
@@ -59,6 +59,7 @@ for (s in name.vec){
   pheno.df <- rbind(pheno.df,build.df)
 }
 row.names(pheno.df) <- name.vec
+pheno.df$group <- (pheno.df$body.region %&% "."%&% pheno.df$cell.type) %>% as.factor(.)
 
 ```
 
@@ -70,10 +71,12 @@ row.names(pheno.df) <- name.vec
 ddsFullCountTable <- DESeqDataSetFromMatrix(
   countData = countdata,
   colData = pheno.df,
-  design = ~ body.region + cell.type)
+  design = ~ donor + group )
+  
+#design = ~ body.region + cell.type )
 
-ddsFullCountTable$body.region <- relevel(ddsFullCountTable$body.region,"Glut")
-ddsFullCountTable$cell.type <- relevel(ddsFullCountTable$cell.type,"mADs")
+#ddsFullCountTable$body.region <- relevel(ddsFullCountTable$body.region,"Glut")
+#ddsFullCountTable$cell.type <- relevel(ddsFullCountTable$cell.type,"mADs")
 dds <- DESeq(ddsFullCountTable)
 
 ```
@@ -83,25 +86,61 @@ dds <- DESeq(ddsFullCountTable)
 
 ```{r}
 
-res1 <- results(dds, contrast = c("cell.type","D0","mADs"))
-sum(res1$padj < 0.01, na.rm=TRUE) # 8636
-res2 <- results(dds, contrast = c("body.region","Abdo","Glut"))
-sum(res2$padj < 0.01, na.rm=TRUE) # 29 
+#res1 <- results(dds, contrast = c("cell.type","D0","mADs"))
+#sum(res1$padj < 0.01, na.rm=TRUE) # 8636
+#res2 <- results(dds, contrast = c("body.region","Abdo","Glut"))
+#sum(res2$padj < 0.01, na.rm=TRUE) # 29 
+
+res3 <- results(dds, contrast = c("group","Abdo.D0","Abdo.mADs"))
+sum(res3$padj < 0.01, na.rm=TRUE) # 6058
+
+res4 <- results(dds, contrast = c("group","Glut.D0","Glut.mADs"))
+sum(res4$padj < 0.01, na.rm=TRUE) # 5853; could be the same genes 
+
+
+res5 <- results(dds, contrast = c("group","Abdo.D0","Glut.D0"))
+sum(res5$padj < 0.01, na.rm=TRUE) # 19 
+
+res6 <- results(dds, contrast = c("group","Abdo.mADs","Glut.mADs"))
+sum(res6$padj < 0.01, na.rm=TRUE) # 33
 
 ```
 
 ```{r}
 
-df1 <- as.data.frame(res1)
-df1$ensid <- rownames(countdata)
-df1$gene.name <- gene.vec
-write.table(x=df1,file=work.dir%&%"rna_seq/deseq_cell-type.txt",
+#df1 <- as.data.frame(res1)
+#df1$ensid <- rownames(countdata)
+#df1$gene.name <- gene.vec
+#write.table(x=df1,file=work.dir%&%"rna_seq/deseq_cell-type.txt",
+#            sep="\t",quote=F,row.names=F)
+#df2 <- as.data.frame(res2)
+#df2$ensid <- rownames(countdata)
+#df2$gene.name <- gene.vec
+#write.table(x=df2,file=work.dir%&%"rna_seq/deseq_body-region.txt",
+#            sep="\t",quote=F,row.names=F)
+
+df3 <- as.data.frame(res3)
+df3$ensid <- rownames(countdata)
+df3$gene.name <- gene.vec
+write.table(x=df3,file=work.dir%&%"rna_seq/Abdo-D0_vs_mADs.txt",
             sep="\t",quote=F,row.names=F)
 
-df2 <- as.data.frame(res2)
-df2$ensid <- rownames(countdata)
-df2$gene.name <- gene.vec
-write.table(x=df2,file=work.dir%&%"rna_seq/deseq_body-region.txt",
+df4 <- as.data.frame(res4)
+df4$ensid <- rownames(countdata)
+df4$gene.name <- gene.vec
+write.table(x=df4,file=work.dir%&%"rna_seq/Glut-D0_vs_mADs.txt",
+            sep="\t",quote=F,row.names=F)
+
+df5 <- as.data.frame(res5)
+df5$ensid <- rownames(countdata)
+df5$gene.name <- gene.vec
+write.table(x=df5,file=work.dir%&%"rna_seq/D0-Abdo_vs_Glut.txt",
+            sep="\t",quote=F,row.names=F)
+
+df6 <- as.data.frame(res6)
+df6$ensid <- rownames(countdata)
+df6$gene.name <- gene.vec
+write.table(x=df6,file=work.dir%&%"rna_seq/mADs-Abdo_vs_Glut.txt",
             sep="\t",quote=F,row.names=F)
 
 ```
@@ -116,20 +155,26 @@ Cell type
 
 ```{r}
 
-plotMA(res1)
+#plotMA(res1)
+#hist( res1$pvalue, breaks=20, col="grey")
 
-hist( res1$pvalue, breaks=20, col="grey")
+#plotMA(res2)
+#hist( res2$pvalue, breaks=20, col="grey")
+
+plotMA(res3)
+hist( res3$pvalue, breaks=20, col="grey")
+
+plotMA(res4)
+hist( res4$pvalue, breaks=20, col="grey")
+
+plotMA(res5)
+hist( res5$pvalue, breaks=20, col="grey")
+
+plotMA(res6)
+hist( res6$pvalue, breaks=20, col="grey")
 
 ```
 
-
-Body Region 
-
-```{r}
-
-plotMA(res2)
-hist( res2$pvalue, breaks=20, col="grey")
-```
 
 ##  Dispersion plots 
 
@@ -171,9 +216,9 @@ library( "RColorBrewer" )
 colours = colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
 #heatmap.2( sampleDistMatrix, trace="none", col=colours)
 
-plotPCA( rld, intgroup = c("cell.type","donor","body.region"))
+plotPCA( rld, intgroup = c("group"))#,"donor"))
 
-
+# ClusterProfiler (Hypergeometic test)
 ```
 
 
